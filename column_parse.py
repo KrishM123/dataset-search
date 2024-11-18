@@ -1,11 +1,11 @@
 import os
-import csv
+import json
 import pandas as pd
 from kaggle.api.kaggle_api_extended import KaggleApi
 from sentence_transformers import SentenceTransformer
 import zipfile
 import tempfile
-import shutil
+import uuid
 
 # Initialize the Kaggle API and SentenceTransformer model
 api = KaggleApi()
@@ -15,30 +15,27 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 # Load your CSV containing dataset titles and links
 datasets_info = pd.read_csv('kaggle_datasets.csv')
 
-# Load existing embeddings to skip already processed datasets
-processed_titles = set()
-if os.path.exists('dataset_column_embeddings.csv'):
-    existing_data = pd.read_csv('dataset_column_embeddings.csv')
-    processed_titles = set(existing_data['Title'])
+# Load existing dataset IDs to skip already processed datasets
+processed_ids = set()
+if os.path.exists('dataset_metadata.jsonl'):
+    with open('dataset_metadata.jsonl', 'r', encoding='utf-8') as f:
+        for line in f:
+            data = json.loads(line)
+            processed_ids.add(data['dataset_id'])
 
-# Open the output CSV in append mode
-with open('dataset_column_embeddings.csv', 'a', newline='', encoding='utf-8') as csvfile:
-    # Define the CSV writer
-    fieldnames = ['Title', 'Link', 'Column Name', 'Embedding']
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-    
-    # Write the header only if the file is empty
-    if csvfile.tell() == 0:
-        writer.writeheader()
-
+# Open the output JSONL in append mode
+with open('dataset_metadata.jsonl', 'a', encoding='utf-8') as jsonl_file:
     # Create a temporary directory to store all downloads
     with tempfile.TemporaryDirectory() as temp_dir:
         for index, row in datasets_info.iterrows():
             title = row['Title']
             link = row['Link']
-
+            
+            # Generate a unique ID for the dataset
+            dataset_id = str(uuid.uuid4())
+            
             # Skip if the dataset has already been processed
-            if title in processed_titles:
+            if dataset_id in processed_ids:
                 print(f"Skipping already processed dataset: {title}")
                 continue
             
@@ -46,6 +43,27 @@ with open('dataset_column_embeddings.csv', 'a', newline='', encoding='utf-8') as
             dataset_ref = link.split('/datasets/')[1]
             
             try:
+                # Get dataset metadata including description
+                dataset_metadata = api.dataset_metadata(dataset_ref)
+                description = dataset_metadata.description
+                
+                # Generate embeddings for title and description
+                title_embedding = model.encode(title).tolist()
+                description_embedding = model.encode(description).tolist()
+                
+                # Initialize the dataset record
+                dataset_record = {
+                    "dataset_id": dataset_id,
+                    "title": title,
+                    "link": link,
+                    "description": description,
+                    "embeddings": {
+                        "title": title_embedding,
+                        "description": description_embedding,
+                        "columns": []
+                    }
+                }
+                
                 # List files in the dataset and download them
                 dataset_files = api.dataset_list_files(dataset_ref)
                 if not dataset_files.files:
@@ -57,14 +75,13 @@ with open('dataset_column_embeddings.csv', 'a', newline='', encoding='utf-8') as
                     file_name = file_info.name
                     download_path = os.path.join(temp_dir, file_name)
 
-                    # Retry logic for downloading the entire file
                     try:
                         api.dataset_download_file(dataset_ref, file_name, path=temp_dir)
                     except Exception as e:
                         print(f"Retrying download for {file_name} due to error: {str(e)}")
                         api.dataset_download_file(dataset_ref, file_name, path=temp_dir)
 
-                    # Check if the file is a zip archive
+                    # Handle zip files
                     if file_name.endswith('.zip'):
                         with zipfile.ZipFile(download_path, 'r') as zip_ref:
                             zip_ref.extractall(temp_dir)
@@ -74,7 +91,7 @@ with open('dataset_column_embeddings.csv', 'a', newline='', encoding='utf-8') as
                                 download_path = os.path.join(temp_dir, extracted_file)
                                 break
 
-                    # Ensure the file exists and try to read it
+                    # Process CSV files
                     if os.path.exists(download_path) and download_path.endswith('.csv'):
                         try:
                             df = pd.read_csv(download_path, nrows=2, encoding='utf-8')
@@ -84,20 +101,23 @@ with open('dataset_column_embeddings.csv', 'a', newline='', encoding='utf-8') as
                         column_names = df.columns.tolist()
                         column_embeddings = model.encode(column_names)
 
-                        # Append each column name and its embedding to the CSV
+                        # Add column information to the dataset record
                         for column_name, embedding in zip(column_names, column_embeddings):
-                            writer.writerow({
-                                'Title': title,
-                                'Link': link,
-                                'Column Name': column_name,
-                                'Embedding': embedding.tolist()
+                            dataset_record["embeddings"]["columns"].append({
+                                "name": column_name,
+                                "embedding": embedding.tolist()
                             })
+                        
                         csv_file_found = True
                         print(f"Processed: {title}")
                         break
 
                 if not csv_file_found:
                     raise FileNotFoundError(f"No CSV file found in the dataset: {title}")
+
+                # Write the dataset record to the JSONL file
+                jsonl_file.write(json.dumps(dataset_record) + '\n')
+                jsonl_file.flush()  # Ensure the data is written immediately
 
             except Exception as e:
                 print(f"Failed to process {title}: {str(e)}")
