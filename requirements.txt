@@ -258,3 +258,4 @@ xxhash
 yarl
 zipp
 zope.interface
+uvicorn
