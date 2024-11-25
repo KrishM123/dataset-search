@@ -2,6 +2,9 @@ import json
 import pinecone
 from typing import Dict, List
 from sentence_transformers import SentenceTransformer
+import os
+
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 def load_datasets() -> Dict[str, Dict]:
     """Load and pair the dataset metadata with embeddings"""
@@ -39,7 +42,7 @@ def upload_to_pinecone(
     """Upload dataset embeddings and metadata to Pinecone"""
     # Initialize Pinecone
     pc = Pinecone(
-        api_key="pcsk_6u3ATS_4C5JS5tC8ukEspQY2qe2nEGR8R1CQTgxBkXADEsWPbLWokafPE1qBBywgCWxL87",  # Replace with your API key
+        api_key=PINECONE_API_KEY, 
         environment="us-east-1"    # Replace with your environment
     )
     
@@ -89,7 +92,7 @@ def query_index(
     """
     # Initialize Pinecone
     pc = Pinecone(
-        api_key="pcsk_6u3ATS_4C5JS5tC8ukEspQY2qe2nEGR8R1CQTgxBkXADEsWPbLWokafPE1qBBywgCWxL87",
+        api_key=PINECONE_API_KEY,
         environment="us-east-1"
     )
     

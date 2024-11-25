@@ -4,3 +4,4 @@ kaggle_datasets.csv
 embeddings.jsonl
 raw_datasets.jsonl
 kaggle.json
+.env
