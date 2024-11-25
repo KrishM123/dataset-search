@@ -3,3 +3,4 @@ kaggle_datasets.csv
 \__pycache__
 embeddings.jsonl
 raw_datasets.jsonl
+kaggle.json
