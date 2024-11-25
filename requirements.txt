@@ -200,9 +200,6 @@ rpds-py
 rsa
 s3transfer
 safetensors
-sagemaker
-sagemaker-core
-sagemaker-mlflow
 schema
 scikit-learn
 scipy
